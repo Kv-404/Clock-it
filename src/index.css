@@ -1,0 +1,25 @@
+/* ─── VESPERA — Global Styles ─────────────────────────────────────────────── */
+
+@import "tailwindcss";
+
+/* ── Reset & box model ──────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Root sizing ────────────────────────────────────────────────────────────── */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: black;
+}
+
+/* ── Cursor — keep default so desktop users retain pointer feedback ──────────── */
+body {
+  cursor: default;
+}
