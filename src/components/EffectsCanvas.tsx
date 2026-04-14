@@ -7,7 +7,7 @@ import type { BoxCoords } from '../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const EFFECT_NAMES = [
+export const EFFECT_NAMES = [
   'Burning Inferno',
   'Neon Silhouette',
   'Thermal Vision',
@@ -15,7 +15,15 @@ const EFFECT_NAMES = [
   'Glitch Signal',
   'Neon Edges',
   'Constellation',
+  'Vaporwave Dream',
+  'Retro CRT',
+  'Vintage Sepia',
+  'Cyberpunk Edge',
+  'Psychedelic Wave',
+  'Inverted Void',
 ] as const;
+export type EffectName = typeof EFFECT_NAMES[number];
+export const NUM_EFFECTS = EFFECT_NAMES.length;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -69,9 +77,7 @@ function ShaderPlane({ videoRef, boxRef, effectIndex }: ShaderPlaneProps) {
     if (mat.uniforms) {
       mat.uniforms.uTime.value += gl.info.render.frame ? 0.016 : 0.016;
       mat.uniforms.uBox.value.set(...boxRef.current);
-      mat.uniforms.uEffect.value = THREE.MathUtils.lerp(
-        mat.uniforms.uEffect.value, effectIndex, 0.06
-      );
+      mat.uniforms.uEffect.value = effectIndex;
       mat.uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
     }
   });

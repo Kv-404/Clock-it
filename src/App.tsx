@@ -20,14 +20,12 @@ export default function App() {
   const boxRef          = useRef<BoxCoords>([0, 0, 0, 0]);
   const handsRef        = useRef<HandData[]>([]);
   const videoRef        = useRef<HTMLVideoElement>(null);
-  const pinchCooldownRef = useRef<boolean>(false);
 
   // ── Hand tracker ───────────────────────────────────────────────────────────
   const { initTracker } = useHandTracker({
     videoRef,
     boxRef,
     handsRef,
-    pinchCooldownRef,
     setVideoReady,
     setModelsReady,
     setErrorMsg,

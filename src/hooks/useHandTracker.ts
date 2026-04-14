@@ -1,5 +1,6 @@
 import { useRef, useCallback } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import { NUM_EFFECTS } from '../components/EffectsCanvas';
 import type { HandData, BoxCoords } from '../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -8,13 +9,10 @@ import type { HandData, BoxCoords } from '../types';
 const MCP_INDEX = 9;
 
 /** Euclidean distance threshold (normalised) that triggers a pinch */
-const PINCH_THRESHOLD = 0.05;
+const PINCH_THRESHOLD = 0.08;
 
-/** How long (ms) to suppress repeated pinch triggers */
-const PINCH_COOLDOWN_MS = 1200;
-
-/** Total number of shader effects (effectIndex cycles 0 → N_EFFECTS-1) */
-const N_EFFECTS = 7;
+/** Number of distinct pinches required to cycle to the next filter */
+const PINCHES_TO_CYCLE = 2;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +20,6 @@ interface UseHandTrackerArgs {
   videoRef: React.MutableRefObject<HTMLVideoElement | null>;
   boxRef: React.MutableRefObject<BoxCoords>;
   handsRef: React.MutableRefObject<HandData[]>;
-  pinchCooldownRef: React.MutableRefObject<boolean>;
   setVideoReady: (v: boolean) => void;
   setModelsReady: (v: boolean) => void;
   setErrorMsg: (msg: string) => void;
@@ -57,7 +54,6 @@ export function useHandTracker({
   videoRef,
   boxRef,
   handsRef,
-  pinchCooldownRef,
   setVideoReady,
   setModelsReady,
   setErrorMsg,
@@ -65,10 +61,10 @@ export function useHandTracker({
 }: UseHandTrackerArgs): UseHandTrackerReturn {
   /** Stores the RAF id so we can cancel on cleanup. */
   const animFrameRef   = useRef<number>(0);
-  /** Counts every RAF tick — used for even-frame detection skip. */
-  const frameCountRef  = useRef<number>(0);
-  /** Holds the last valid MediaPipe result so overlay stays smooth on skipped frames. */
   const lastResultsRef = useRef<HandData[]>([]);
+  const frameCountRef  = useRef<number>(0);
+  const wasPinchedRef  = useRef<boolean>(false);
+  const pinchCountRef  = useRef<number>(0);
 
   const initTracker = useCallback(async (): Promise<void> => {
     try {
@@ -191,42 +187,46 @@ export function useHandTracker({
             }
           }
 
-          if (isPinched) {
+          // ── 3c. Bounding-box computation ──────────────────────────────
+          if (hands.length === 2) {
+            const lm0 = hands[0].landmarks[MCP_INDEX];
+            const lm1 = hands[1].landmarks[MCP_INDEX];
+
+            // Fix inverted axes: WebGL Y is inverted vs HTML Canvas.
+            // WebGL expects 0=bottom, 1=top. MediaPipe gives 0=top, 1=bottom.
+            const x0 = lm0.x;
+            const y0 = 1.0 - lm0.y;
+            const x1 = lm1.x;
+            const y1 = 1.0 - lm1.y;
+
+            const distance = dist2D(x0, y0, x1, y1);
+
+            const centerX   = (x0 + x1) / 2;
+            const centerY   = (y0 + y1) / 2;
+            const boxWidth  = distance * 1.3;
+            const boxHeight = boxWidth  * 0.75;
+
+            boxRef.current = [
+              clamp01(centerX - boxWidth  / 2),
+              clamp01(centerY - boxHeight / 2),
+              clamp01(centerX + boxWidth  / 2),
+              clamp01(centerY + boxHeight / 2),
+            ];
+          } else {
             boxRef.current = [0, 0, 0, 0];
-            if (!pinchCooldownRef.current) {
-              setEffectIndex((prev) => (prev + 1) % N_EFFECTS);
-              pinchCooldownRef.current = true;
-              setTimeout(() => { pinchCooldownRef.current = false; }, PINCH_COOLDOWN_MS);
+          }
+
+          if (isPinched) {
+            if (!wasPinchedRef.current) {
+              pinchCountRef.current += 1;
+              if (pinchCountRef.current >= PINCHES_TO_CYCLE) {
+                setEffectIndex((prev) => (prev + 1) % NUM_EFFECTS);
+                pinchCountRef.current = 0;
+              }
+              wasPinchedRef.current = true;
             }
           } else {
-            // ── 3c. Bounding-box computation ──────────────────────────────
-            if (hands.length === 2) {
-              const lm0 = hands[0].landmarks[MCP_INDEX];
-              const lm1 = hands[1].landmarks[MCP_INDEX];
-
-              // Fix inverted axes: WebGL Y is inverted vs HTML Canvas.
-              // WebGL expects 0=bottom, 1=top. MediaPipe gives 0=top, 1=bottom.
-              const x0 = lm0.x;
-              const y0 = 1.0 - lm0.y;
-              const x1 = lm1.x;
-              const y1 = 1.0 - lm1.y;
-
-              const distance = dist2D(x0, y0, x1, y1);
-
-              const centerX   = (x0 + x1) / 2;
-              const centerY   = (y0 + y1) / 2;
-              const boxWidth  = distance * 1.3;
-              const boxHeight = boxWidth  * 0.75;
-
-              boxRef.current = [
-                clamp01(centerX - boxWidth  / 2),
-                clamp01(centerY - boxHeight / 2),
-                clamp01(centerX + boxWidth  / 2),
-                clamp01(centerY + boxHeight / 2),
-              ];
-            } else {
-              boxRef.current = [0, 0, 0, 0];
-            }
+            wasPinchedRef.current = false;
           }
         }
 
@@ -262,7 +262,6 @@ export function useHandTracker({
     videoRef,
     boxRef,
     handsRef,
-    pinchCooldownRef,
     setVideoReady,
     setModelsReady,
     setErrorMsg,

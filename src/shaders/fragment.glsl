@@ -136,6 +136,17 @@ void main() {
   vec4 s12 = texture2D(uTexture, uv + vec2( 0.0,      texel.y));
   vec4 s22 = texture2D(uTexture, uv + vec2( texel.x,  texel.y));
 
+  // CRT chromatic-split samples (Effect 8)
+  vec4 crtR = texture2D(uTexture, uv + vec2(0.005, 0.0));
+  vec4 crtB = texture2D(uTexture, uv - vec2(0.005, 0.0));
+
+  // Psychedelic-wave displaced sample (Effect 11)
+  vec2 pwUv = uv + vec2(
+    sin(uv.y * 12.0 + uTime * 2.0) * 0.03,
+    cos(uv.x * 12.0 + uTime * 2.0) * 0.03
+  );
+  vec4 waveSample = texture2D(uTexture, pwUv);
+
   // ── STEP 3 — Pre-compute luminance values ────────────────────────────────────
   float lum     = getLuma(base.rgb);
   float dispLum = getLuma(dispSample.rgb);
@@ -230,7 +241,7 @@ void main() {
   }
 
   // ── Effect 6 — Constellation Pulse ───────────────────────────────────────────
-  else {
+  else if (uEffect < 6.5) {
     vec2  boxCenter    = (uBox.xy + uBox.zw) * 0.5;
     float distToCenter = distance(uv, boxCenter);
     float pulse        = 0.5 + 0.5 * sin(uTime * 3.0);
@@ -244,5 +255,110 @@ void main() {
     tinted += vec3(0.55, 0.75, 1.0) * spark;
 
     gl_FragColor = vec4(clamp(tinted, 0.0, 1.0), 1.0);
+  }
+
+  // ── Effect 7 — Vaporwave Dream ───────────────────────────────────────────────
+  else if (uEffect < 7.5) {
+    vec3 c = base.rgb;
+    // Boost magenta and cyan
+    c.r = pow(c.r, 0.8) * 1.5;
+    c.g = pow(c.g, 1.2) * 0.8;
+    c.b = pow(c.b, 0.8) * 1.8;
+    
+    // Horizontal scanlines and vertical grid
+    float grid = step(0.95, fract(uv.y * 20.0 + uTime * 0.5)) + step(0.95, fract(uv.x * 20.0));
+    gl_FragColor = vec4(mix(c, vec3(1.0, 0.2, 0.8), grid * 0.2), 1.0);
+  }
+
+  // ── Effect 8 — Retro CRT ─────────────────────────────────────────────────────
+  else if (uEffect < 8.5) {
+    // RGB split using pre-sampled CRT textures
+    vec3 c = vec3(crtR.r, base.g, crtB.b);
+    
+    // Scanlines
+    float scanline = sin(uv.y * 800.0) * 0.04;
+    c -= scanline;
+    
+    // Vignette
+    float dist = distance(uv, vec2(0.5));
+    c *= smoothstep(0.8, 0.3, dist * (1.0 + 0.2 * sin(uTime * 5.0)));
+    
+    gl_FragColor = vec4(c, 1.0);
+  }
+
+  // ── Effect 9 — Vintage Sepia ─────────────────────────────────────────────────
+  else if (uEffect < 9.5) {
+    float r = (base.r * 0.393) + (base.g * 0.769) + (base.b * 0.189);
+    float g = (base.r * 0.349) + (base.g * 0.686) + (base.b * 0.168);
+    float b = (base.r * 0.272) + (base.g * 0.534) + (base.b * 0.131);
+    
+    vec3 sepia = vec3(r, g, b);
+    
+    // Subtle film grain
+    float noise = snoise(uv * 200.0 + uTime * 10.0) * 0.05;
+    sepia += noise;
+    
+    // Film scratch (vertical lines occasionally)
+    float scratch = step(0.998, fract(sin(dot(uv.x + uTime * 0.1, 12.9898)) * 43758.5453));
+    sepia += scratch * 0.2;
+
+    // Darker edges
+    float dist = distance(uv, vec2(0.5));
+    sepia *= smoothstep(0.8, 0.4, dist);
+    
+    gl_FragColor = vec4(clamp(sepia, 0.0, 1.0), 1.0);
+  }
+
+  // ── Effect 10 — Cyberpunk Edge ───────────────────────────────────────────────
+  else if (uEffect < 10.5) {
+    float l00 = getLuma(s00.rgb), l10 = getLuma(s10.rgb), l20 = getLuma(s20.rgb);
+    float l01 = getLuma(s01.rgb), l21 = getLuma(s21.rgb);
+    float l02 = getLuma(s02.rgb), l12 = getLuma(s12.rgb), l22 = getLuma(s22.rgb);
+    float Gx = -l00 - 2.0*l01 - l02 + l20 + 2.0*l21 + l22;
+    float Gy = -l00 - 2.0*l10 - l20 + l02 + 2.0*l12 + l22;
+    float edge = clamp(sqrt(Gx*Gx + Gy*Gy) * 3.0, 0.0, 1.0);
+    
+    // Split neon cyan/pink
+    vec3 cy = vec3(0.0, 1.0, 0.9);
+    vec3 pk = vec3(1.0, 0.0, 0.6);
+    float side = step(0.5, uv.x + sin(uv.y * 10.0 + uTime)*0.1);
+    vec3 edgeColor = mix(pk, cy, side) * edge * 2.5;
+    
+    // Tint dark areas with deep purple
+    vec3 baseTint = mix(vec3(0.05, 0.0, 0.1), base.rgb, 0.2);
+    
+    gl_FragColor = vec4(clamp(baseTint + edgeColor, 0.0, 1.0), 1.0);
+  }
+
+  // ── Effect 11 — Psychedelic Wave ─────────────────────────────────────────────
+  else if (uEffect < 11.5) {
+    vec3 c = waveSample.rgb;
+    // Map luminance to a rotating rainbow palette
+    float l = getLuma(c);
+    vec3 rainbow = vec3(
+      0.5 + 0.5 * sin(l * 10.0 + uTime),
+      0.5 + 0.5 * sin(l * 10.0 + uTime + 2.09),
+      0.5 + 0.5 * sin(l * 10.0 + uTime + 4.18)
+    );
+    
+    gl_FragColor = vec4(mix(c, rainbow, 0.6), 1.0);
+  }
+
+  // ── Effect 12 — Inverted Void ────────────────────────────────────────────────
+  else {
+    // High contrast black and white negative
+    float gray = getLuma(base.rgb);
+    float contrastGray = smoothstep(0.3, 0.7, gray);
+    vec3 inverted = vec3(1.0 - contrastGray);
+    
+    // White glowing trails outside the sharp edges based on motion (using dispersion trick)
+    float lDisp = getLuma(dispSample.rgb);
+    float glow = smoothstep(0.4, 0.8, lDisp);
+    
+    // Pure black void for the darkest parts
+    inverted *= smoothstep(0.1, 0.3, gray);
+    inverted += vec3(glow * 0.3);
+    
+    gl_FragColor = vec4(clamp(inverted, 0.0, 1.0), 1.0);
   }
 }
